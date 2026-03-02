@@ -89,26 +89,6 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    
-    // 输出 APK 文件名
-    applicationVariants.all { variant ->
-        variant.outputs.all {
-            def buildType = variant.buildType.name
-            def versionName = variant.versionName
-            def versionCode = variant.versionCode
-            outputFileName = "moss-${buildType}-v${versionName}-${versionCode}.apk"
-        }
-    }
-    
-    // 分包配置 (可选)
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'armeabi-v7a', 'arm64-v8a', 'x86_64'
-            universalApk true
-        }
-    }
 }
 
 flutter {
