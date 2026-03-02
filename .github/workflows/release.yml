@@ -70,13 +70,16 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs 2>/dev/null || true
 
       - name: Decode keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No keystore configured, will use debug signing"
+            exit 0
+          fi
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/moss-release.keystore
           cat > android/key.properties <<PROPS
           storePassword=$STORE_PASSWORD
