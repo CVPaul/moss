@@ -59,6 +59,15 @@ jobs:
         run: |
           # Ensure gradle.properties exists (may be gitignored)
           printf 'org.gradle.jvmargs=-Xmx4G\nandroid.useAndroidX=true\nandroid.enableJetifier=true\n' > android/gradle.properties
+          # Upgrade Gradle wrapper to 8.9 (required by AGP 8.7.3)
+          sed -i 's|gradle-.*-all.zip|gradle-8.9-all.zip|g' android/gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
+          if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then
+            cat android/gradle/wrapper/gradle-wrapper.properties
+          else
+            mkdir -p android/gradle/wrapper
+            printf 'distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-all.zip\nzipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n' > android/gradle/wrapper/gradle-wrapper.properties
+            echo 'Created gradle-wrapper.properties with Gradle 8.9'
+          fi
 
       - name: Get Flutter dependencies
         run: flutter pub get
