@@ -1,0 +1,159 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Flutter APK & Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+          else
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG_NAME#v}"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION (tag: $TAG_NAME)"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Prepare Android build files
+        run: |
+          # Ensure gradle.properties exists (may be gitignored)
+          cat > android/gradle.properties <<EOF
+          org.gradle.jvmargs=-Xmx4G
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Run code generation
+        run: dart run build_runner build --delete-conflicting-outputs 2>/dev/null || true
+
+      - name: Decode keystore
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/moss-release.keystore
+          cat > android/key.properties <<PROPS
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=moss-release.keystore
+          PROPS
+          echo "Release keystore configured"
+
+      - name: Build Release APK (universal)
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.version }}" \
+            --build-number="${{ github.run_number }}"
+
+      - name: Build Release APK (split per ABI)
+        run: |
+          flutter build apk --release --split-per-abi \
+            --build-name="${{ steps.version.outputs.version }}" \
+            --build-number="${{ github.run_number }}"
+
+      - name: Prepare release assets
+        id: assets
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          APK_DIR="build/app/outputs/flutter-apk"
+
+          # Rename universal APK
+          if [ -f "$APK_DIR/app-release.apk" ]; then
+            cp "$APK_DIR/app-release.apk" "$APK_DIR/moss-v${VERSION}-universal.apk"
+          fi
+
+          # Rename split APKs
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            if [ -f "$APK_DIR/app-${abi}-release.apk" ]; then
+              cp "$APK_DIR/app-${abi}-release.apk" "$APK_DIR/moss-v${VERSION}-${abi}.apk"
+            fi
+          done
+
+          echo "APK files:"
+          ls -lh "$APK_DIR"/moss-*.apk 2>/dev/null || echo "No renamed APKs found, listing all:"
+          ls -lh "$APK_DIR"/*.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: "Moss v${{ steps.version.outputs.version }}"
+          body: |
+            ## Moss 智能管家助手 v${{ steps.version.outputs.version }}
+
+            ### 功能特性
+            - 🤖 多 LLM 支持: DeepSeek, 通义千问, 智谱GLM, GitHub Copilot
+            - 🛠️ 工具调用: 打开APP、创建日程、搜索、播放音乐、点外卖等
+            - 📅 日程管理: 创建、编辑、冲突检测、系统日历同步
+            - ✅ 任务管理: 优先级、分类、截止日期
+            - 🎙️ 语音交互: 语音识别 + 语音合成
+            - 🧠 智能提醒: 上下文分析、用户习惯学习、智能建议
+            - ♾️ 无限上下文: 自动压缩长对话，LLM 辅助记忆提取
+            - 🌙 深色模式 + 响应式布局
+
+            ### 安装说明
+            | 文件 | 适用设备 |
+            |------|----------|
+            | `moss-v${{ steps.version.outputs.version }}-arm64-v8a.apk` | **推荐** - 大多数现代 Android 手机 |
+            | `moss-v${{ steps.version.outputs.version }}-armeabi-v7a.apk` | 旧款 32 位 ARM 设备 |
+            | `moss-v${{ steps.version.outputs.version }}-x86_64.apk` | x86 模拟器或 Chromebook |
+            | `moss-v${{ steps.version.outputs.version }}-universal.apk` | **通用** - 不确定架构时选这个 |
+
+            ### 首次使用
+            1. 下载并安装 APK
+            2. 打开应用，进入 **设置** 页面
+            3. 选择 LLM 提供商，配置 API Key
+            4. 开始与 Moss 对话！
+          draft: false
+          prerelease: false
+          files: |
+            build/app/outputs/flutter-apk/moss-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
