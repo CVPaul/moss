@@ -57,11 +57,11 @@ jobs:
       - name: Prepare Android build files
         run: |
           # Ensure gradle.properties exists (may be gitignored)
-          cat > android/gradle.properties <<EOF
-          org.gradle.jvmargs=-Xmx4G
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
+          cat > android/gradle.properties << 'EOF'
+org.gradle.jvmargs=-Xmx4G
+android.useAndroidX=true
+android.enableJetifier=true
+EOF
 
       - name: Get Flutter dependencies
         run: flutter pub get
