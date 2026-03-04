@@ -1,4 +1,4 @@
-package com.example.moss
+package com.moss.assistant
 
 import io.flutter.embedding.android.FlutterActivity
 
